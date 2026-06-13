@@ -57,7 +57,12 @@ HERE = Path(__file__).resolve().parent
 #  A game flags BUY when the live scraped jackpot >= its notify threshold.
 #  (EV ignores taxes and the small chance of splitting a jackpot — see README.)
 # ============================================================================
-NOTIFY_MARGIN = 0.40  # 40% above break-even before we shout "BUY"
+# Buy only when the jackpot is this far above the pre-tax break-even.
+# 0.72 (1.72x) grosses up for a ~42% jackpot tax (37% federal + 4.95% IL):
+# you keep 1/1.72 = 58 cents on the dollar, which restores break-even after tax.
+# It is a tax gross-up, not a separate safety cushion — raise it further if you
+# also want margin for variance / jackpot-split risk.
+NOTIFY_MARGIN = 0.72
 
 GAME_DATA = {
     # ---- filled from the rules PDFs (batch 1 of 3) -------------------------
@@ -441,7 +446,7 @@ def report(results):
     webbrowser.open(out.as_uri())
 
 
-VERSION = "build-7 (+EV engine, all 12 games loaded)"
+VERSION = "build-8 (12 games, 72% margin ~ covers 42% tax)"
 
 
 def main():
