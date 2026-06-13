@@ -134,7 +134,23 @@ GAME_DATA = {
             (1000, 2400), (10000, 24000),
         ],
     },
-    # ---- batch 3 (remaining 2 games) gets added as those PDFs arrive -------
+    # ---- filled from the rules PDFs (batch 3 of 3) -------------------------
+    "cash-castle": {
+        "price": 30.00, "jackpot_odds": 240000.0,
+        "fixed_prizes": [
+            (40, 8.17), (50, 13.71), (60, 18.46), (70, 50), (100, 96), (150, 96),
+            (200, 120), (300, 240), (350, 480), (375, 685.71), (400, 1714.29),
+            (500, 685.71), (600, 6000), (1000, 8000), (1200, 12000), (1600, 24000),
+            (10000, 60000),
+        ],
+    },
+    "ultimate-diamond-jackpot": {
+        "price": 30.00, "jackpot_odds": 240000.0,
+        "fixed_prizes": [
+            (30, 8.21), (40, 11.43), (50, 10.43), (100, 18.18), (150, 116.79),
+            (250, 400), (500, 963.86), (1000, 9230.77), (10000, 120000),
+        ],
+    },
 }
 
 
@@ -425,7 +441,7 @@ def report(results):
     webbrowser.open(out.as_uri())
 
 
-VERSION = "build-6 (+EV engine, 10/12 games loaded)"
+VERSION = "build-7 (+EV engine, all 12 games loaded)"
 
 
 def main():

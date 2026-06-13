@@ -1,92 +1,82 @@
-# Illinois Lottery FastPlay Jackpot Scraper
+# Illinois Lottery FastPlay — +EV Tracker
 
-Pulls the **current progressive jackpot totals** for the Illinois Lottery
-FastPlay games you care about, at the click of a button. Use the output to
-check which games are +EV.
+Scrapes the **current progressive jackpot** for the Illinois Lottery FastPlay
+games you care about, compares each to its **break-even jackpot**, and tells you
+when one is **+EV enough to buy** — all from one double-click.
 
-Games tracked (edit `games.json` to change): Cash Castle, Ultimate Diamond
-Jackpot, Twenty 20s, Illinois Super Jackpot, Luxury Loot, Illinois Jackpot,
-$10 Quick Spot, Big Number Knockout, Going Pro, Blackjack, Fiesta Fever,
-Booming Bucks.
+## The easy way: `RUN_ME.py` (one file)
+
+1. Make sure **Python** is installed once (Windows: [python.org/downloads](https://www.python.org/downloads/),
+   tick **"Add Python to PATH"**; Mac usually already has it).
+2. Double-click **`RUN_ME.py`**.
+
+It installs the browser tool on first run, reads every game's jackpot, scores the
+EV, and opens a results page in your browser. BUY signals are highlighted, listed
+in a green banner, printed in the console, and beep. A `jackpots.csv` is written
+next to the file for your spreadsheet.
+
+> The first lines printed show the build version, e.g.
+> `build-7 (+EV engine, all 12 games loaded)`. If you don't see a recent build,
+> you're running an old downloaded copy — delete it and re-download.
+
+## How the EV math works
+
+For each game we know the ticket **price**, the **jackpot odds** (1 in N), and the
+full table of **non-jackpot prize tiers** `(prize, odds)` taken from that game's
+official Fast Play rules PDF. Then:
+
+```
+fixed_EV          = Σ (prize ÷ odds)         over the non-jackpot tiers
+break-even jackpot = (price − fixed_EV) × jackpot_odds      # EV == $0 here
+buy threshold      = break-even × (1 + NOTIFY_MARGIN)       # default +40%
+EV at jackpot J    = fixed_EV + J ÷ jackpot_odds − price
+```
+
+A game flags **BUY** when its live scraped jackpot ≥ its buy threshold,
+**+EV** when it's above break-even but below your cushion, otherwise **wait**.
+
+### Break-even reference (current odds tables)
+
+| Game | Price | Jackpot odds | Break-even | Buy @ +40% |
+|---|---|---|---|---|
+| Booming Bucks | $2 | 1 in 120,000 | $98,250 | $137,550 |
+| Fiesta Fever | $5 | 1 in 60,000 | $113,006 | $158,208 |
+| Blackjack | $5 | 1 in 60,000 | $115,018 | $161,026 |
+| Going Pro | $5 | 1 in 60,000 | $116,777 | $163,488 |
+| Big Number Knockout | $5 | 1 in 80,000 | $150,035 | $210,048 |
+| $10 Quick Spot | $10 | 1 in 60,000 | $177,065 | $247,891 |
+| Illinois Jackpot | $10 | 1 in 60,000 | $196,271 | $274,779 |
+| Luxury Loot | $10 | 1 in 80,000 | $312,149 | $437,009 |
+| Twenty 20s | $20 | 1 in 80,000 | $563,408 | $788,772 |
+| Illinois Super Jackpot | $20 | 1 in 120,000 | $819,977 | $1,147,968 |
+| Cash Castle | $30 | 1 in 240,000 | $2,037,379 | $2,852,331 |
+| Ultimate Diamond Jackpot | $30 | 1 in 240,000 | $2,383,721 | $3,337,210 |
+
+### Caveats (read before betting real money)
+
+- **Taxes** are ignored. Illinois withholds on large prizes; after-tax break-even
+  is higher than shown.
+- **Jackpot splitting** is ignored — EV assumes the winner takes 100% (true for
+  these games' rules, but two tickets hitting near-simultaneously is a tail risk).
+- Odds are taken from the rules PDFs as written; if the lottery revises a game,
+  update its numbers in `GAME_DATA` inside `RUN_ME.py`.
+
+### Tuning
+
+- **Change the cushion:** edit `NOTIFY_MARGIN` near the top of `RUN_ME.py`
+  (`0.40` = 40%).
+- **Fix odds / add a game:** edit the `GAME_DATA` dict (and the `GAMES` list for
+  scraping) in `RUN_ME.py`.
+
+## The advanced way: web app
+
+`app.py` + `scraper.py` provide the same scrape behind a local web button with
+JSON/CSV download. See `requirements.txt`; run `python app.py` and open
+<http://127.0.0.1:5000>. (The EV scoring lives in `RUN_ME.py`; the web app
+currently shows raw jackpots.)
 
 ## Why a real browser?
 
 `illinoislottery.com` is JavaScript-rendered and behind Akamai-style bot
-protection — plain `requests`/`curl` get an HTTP 403. So this tool drives a real
-Chromium browser via **Playwright**. For each game it reads the jackpot from the
-page's own backend JSON when available (the exact number shown on screen) and
-falls back to the rendered page text otherwise.
-
-## Setup (one time)
-
-```bash
-pip install -r requirements.txt
-python -m playwright install chromium
-```
-
-## Run — the one-click web app
-
-```bash
-python app.py
-```
-
-Open <http://127.0.0.1:5000>, click **Scrape Jackpots**. The table fills with
-each game's current progressive jackpot, and you can **Download JSON / CSV**.
-A full scrape takes roughly 30–60 seconds (it opens each game page in turn).
-
-Tick **Show browser** if you want to watch it work (useful for debugging or if
-the site shows a prompt).
-
-## Run — command line (for automation / cron)
-
-```bash
-python scraper.py            # headless
-python scraper.py --headed   # watch the browser
-```
-
-Writes timestamped files plus `output/latest.json` and `output/latest.csv`:
-
-```json
-{
-  "scraped_at": "2026-06-13T22:59:00+00:00",
-  "games": [
-    { "name": "Cash Castle", "slug": "cash-castle",
-      "jackpot": "$786,049", "jackpot_value": 786049.0,
-      "source": "network-json", "ok": true, "error": null,
-      "scraped_at": "2026-06-13T22:59:00+00:00" }
-  ]
-}
-```
-
-`jackpot_value` is the plain number — feed that straight into your EV math.
-
-## If a game fails or the site shows a wall
-
-FastPlay jackpot pages are public, but if you ever hit a geolocation/login/cookie
-prompt, run this once to establish a persisted session (in Illinois):
-
-```bash
-python setup_login.py
-```
-
-It opens a browser using the same profile the scraper reuses. Clear any prompts,
-close it, then scrape again.
-
-## Tuning
-
-- **Add/remove games or fix a slug:** edit `games.json`. Each game's page is
-  `https://www.illinoislottery.com/games/fpg/<slug>`.
-- **Page needs longer to render:** increase the settle time,
-  e.g. `python scraper.py --settle-ms 4000`.
-- The extraction logic (JSON keys + dollar-amount regexes) lives in
-  `scraper.py`; the captured page data is the source of truth for the value.
-
-## Files
-
-| File | Purpose |
-|------|---------|
-| `app.py` | Flask web app with the Scrape button |
-| `scraper.py` | Playwright scraping + extraction, also a CLI |
-| `setup_login.py` | Optional one-time login/geo session setup |
-| `games.json` | The list of games and their URL slugs |
-| `templates/index.html` | The button + results table UI |
+protection — plain HTTP requests get a 403. Both tools drive a real Chromium
+browser via Playwright and read the jackpot from the rendered page.
