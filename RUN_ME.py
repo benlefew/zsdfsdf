@@ -139,10 +139,13 @@ def scrape():
         )
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
 
+        # Register the network listener ONCE; reuse a list we clear per game.
+        captured = []
+        page.on("response", lambda r: _grab(r, captured))
+
         for i, (name, slug) in enumerate(GAMES, 1):
             url = BASE.format(slug=slug)
-            captured = []
-            page.on("response", lambda r: _grab(r, captured))
+            captured.clear()
             value, source, err = None, "", None
             try:
                 page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -151,7 +154,7 @@ def scrape():
                 except PWTimeout:
                     pass
                 page.wait_for_timeout(2000)
-                for blob in captured:
+                for blob in list(captured):
                     v = json_jackpot(blob)
                     if v is not None and (value is None or v > value):
                         value, source = v, "site data"
@@ -161,8 +164,6 @@ def scrape():
                         source = "page text"
             except Exception as e:  # noqa: BLE001
                 err = str(e).splitlines()[0][:80]
-            finally:
-                page.remove_listener("response", lambda r: _grab(r, captured))
 
             if value is not None:
                 print(f"  [{i}/{len(GAMES)}] {name:<28} {fmt(value)}")
@@ -227,7 +228,9 @@ def main():
         ok = sum(1 for r in results if r[1])
         print(f"\nDone — {ok}/{len(results)} jackpots read. A results page just opened in your browser.")
     except Exception as e:  # noqa: BLE001
-        print("\nSomething went wrong:\n  " + str(e))
+        import traceback
+        print("\nSomething went wrong:")
+        traceback.print_exc()
     finally:
         try:
             input("\nPress Enter to close this window...")
