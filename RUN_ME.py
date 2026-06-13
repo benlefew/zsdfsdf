@@ -57,12 +57,15 @@ HERE = Path(__file__).resolve().parent
 #  A game flags BUY when the live scraped jackpot >= its notify threshold.
 #  (EV ignores taxes and the small chance of splitting a jackpot — see README.)
 # ============================================================================
-# Buy only when the jackpot is this far above the pre-tax break-even.
-# 0.72 (1.72x) grosses up for a ~42% jackpot tax (37% federal + 4.95% IL):
-# you keep 1/1.72 = 58 cents on the dollar, which restores break-even after tax.
-# It is a tax gross-up, not a separate safety cushion — raise it further if you
-# also want margin for variance / jackpot-split risk.
-NOTIFY_MARGIN = 0.72
+# How far above the pre-tax break-even a jackpot must be before we shout "BUY".
+# Two independent pieces, stacked multiplicatively:
+#   TAX_RATE       - tax on the jackpot. We gross up by 1/(1-TAX_RATE) because
+#                    tax hits the whole jackpot (37% federal + 4.95% IL ~= 42%).
+#   SAFETY_CUSHION - extra buffer on top for variance / jackpot-split risk.
+# Resulting threshold = break-even * (1/(1-TAX_RATE)) * (1+SAFETY_CUSHION).
+TAX_RATE = 0.42
+SAFETY_CUSHION = 0.20
+NOTIFY_MARGIN = (1.0 / (1.0 - TAX_RATE)) * (1.0 + SAFETY_CUSHION) - 1.0  # ~1.07 (2.07x)
 
 GAME_DATA = {
     # ---- filled from the rules PDFs (batch 1 of 3) -------------------------
@@ -413,7 +416,7 @@ def report(results):
  button{{margin-top:16px;padding:10px 18px;border:0;border-radius:8px;background:#16a0e0;color:#fff;font-weight:600;cursor:pointer}}
 </style>
 <h1>🎰 Illinois Lottery FastPlay — +EV Tracker</h1>
-<div class=sub>Scraped {when}. Break-even = jackpot where EV is $0. Buy-threshold = {int(NOTIFY_MARGIN*100)}% above that. Re-run any time to refresh.</div>
+<div class=sub>Scraped {when}. Break-even = jackpot where pre-tax EV is $0. Buy-threshold = break-even &times; {1+NOTIFY_MARGIN:.2f} (covers {int(TAX_RATE*100)}% tax + {int(SAFETY_CUSHION*100)}% safety). Re-run any time to refresh.</div>
 {banner}
 <table><thead><tr>
  <th>Game</th><th style=text-align:right>Jackpot</th><th style=text-align:right>Break-even</th>
@@ -446,7 +449,7 @@ def report(results):
     webbrowser.open(out.as_uri())
 
 
-VERSION = "build-8 (12 games, 72% margin ~ covers 42% tax)"
+VERSION = "build-9 (12 games, 42% tax + 20% safety = 2.07x)"
 
 
 def main():

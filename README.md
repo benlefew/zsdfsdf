@@ -28,7 +28,7 @@ official Fast Play rules PDF. Then:
 ```
 fixed_EV          = Σ (prize ÷ odds)         over the non-jackpot tiers
 break-even jackpot = (price − fixed_EV) × jackpot_odds      # pre-tax EV == $0
-buy threshold      = break-even × (1 + NOTIFY_MARGIN)       # default +72%
+buy threshold      = break-even × (1/(1−TAX_RATE)) × (1+SAFETY_CUSHION)
 EV at jackpot J    = fixed_EV + J ÷ jackpot_odds − price    # pre-tax
 ```
 
@@ -36,33 +36,34 @@ A game flags **BUY** when its live scraped jackpot ≥ its buy threshold,
 **+EV** when it's above (pre-tax) break-even but below your threshold,
 otherwise **wait**.
 
-**About the 72% margin (taxes):** taxes take their cut off the *whole* jackpot,
-so to stay +EV after tax you **gross up** — divide break-even by `(1 − tax)`,
-which is *not* the same as adding the tax rate. A margin `m` covers a jackpot tax
-rate of `t = 1 − 1/(1 + m)`. The default `0.72` (1.72×) covers **~42%**
-(37% federal top bracket + 4.95% Illinois). For reference: 0.40 only covers
-~28.6%; 0.43 covers 30%. The margin is a tax gross-up, not a separate variance
-cushion — raise it further if you also want a safety buffer or worry about
-splitting a jackpot.
+**Two independent buffers** (stacked multiplicatively):
+
+- **`TAX_RATE` (default 0.42):** tax takes its cut off the *whole* jackpot, so we
+  **gross up** by `1/(1−tax)` — *not* the same as adding the tax rate. 0.42 ≈
+  37% federal top bracket + 4.95% Illinois → a 1.72× factor.
+- **`SAFETY_CUSHION` (default 0.20):** an extra 20% buffer for variance /
+  jackpot-split risk, on top of the tax gross-up.
+
+Combined factor = `1.72 × 1.20 = 2.07×` above the pre-tax break-even.
 
 ### Break-even reference (current odds tables)
 
-`Break-even` is pre-tax (EV = $0). `Buy @ +72%` is the after-tax-covered trigger.
+`Break-even` is pre-tax (EV = $0). `Buy @ 2.07×` covers ~42% tax + 20% safety.
 
-| Game | Price | Jackpot odds | Break-even | Buy @ +72% |
+| Game | Price | Jackpot odds | Break-even | Buy @ 2.07× |
 |---|---|---|---|---|
-| Booming Bucks | $2 | 1 in 120,000 | $98,250 | $168,990 |
-| Fiesta Fever | $5 | 1 in 60,000 | $113,006 | $194,370 |
-| Blackjack | $5 | 1 in 60,000 | $115,018 | $197,832 |
-| Going Pro | $5 | 1 in 60,000 | $116,777 | $200,856 |
-| Big Number Knockout | $5 | 1 in 80,000 | $150,035 | $258,060 |
-| $10 Quick Spot | $10 | 1 in 60,000 | $177,065 | $304,552 |
-| Illinois Jackpot | $10 | 1 in 60,000 | $196,271 | $337,586 |
-| Luxury Loot | $10 | 1 in 80,000 | $312,149 | $536,896 |
-| Twenty 20s | $20 | 1 in 80,000 | $563,408 | $969,063 |
-| Illinois Super Jackpot | $20 | 1 in 120,000 | $819,977 | $1,410,360 |
-| Cash Castle | $30 | 1 in 240,000 | $2,037,379 | $3,504,292 |
-| Ultimate Diamond Jackpot | $30 | 1 in 240,000 | $2,383,721 | $4,100,001 |
+| Booming Bucks | $2 | 1 in 120,000 | $98,250 | $203,276 |
+| Fiesta Fever | $5 | 1 in 60,000 | $113,006 | $233,806 |
+| Blackjack | $5 | 1 in 60,000 | $115,018 | $237,969 |
+| Going Pro | $5 | 1 in 60,000 | $116,777 | $241,607 |
+| Big Number Knockout | $5 | 1 in 80,000 | $150,035 | $310,416 |
+| $10 Quick Spot | $10 | 1 in 60,000 | $177,065 | $366,342 |
+| Illinois Jackpot | $10 | 1 in 60,000 | $196,271 | $406,078 |
+| Luxury Loot | $10 | 1 in 80,000 | $312,149 | $645,826 |
+| Twenty 20s | $20 | 1 in 80,000 | $563,408 | $1,165,673 |
+| Illinois Super Jackpot | $20 | 1 in 120,000 | $819,977 | $1,696,504 |
+| Cash Castle | $30 | 1 in 240,000 | $2,037,379 | $4,215,267 |
+| Ultimate Diamond Jackpot | $30 | 1 in 240,000 | $2,383,721 | $4,931,837 |
 
 ### Caveats (read before betting real money)
 
@@ -76,8 +77,8 @@ splitting a jackpot.
 
 ### Tuning
 
-- **Change the margin:** edit `NOTIFY_MARGIN` near the top of `RUN_ME.py`
-  (`0.72` = 72%, covering ~42% tax; a margin `m` covers tax `1 − 1/(1+m)`).
+- **Change the buffers:** edit `TAX_RATE` and `SAFETY_CUSHION` near the top of
+  `RUN_ME.py`. The buy threshold is `break-even × (1/(1−TAX_RATE)) × (1+SAFETY_CUSHION)`.
 - **Fix odds / add a game:** edit the `GAME_DATA` dict (and the `GAMES` list for
   scraping) in `RUN_ME.py`.
 
