@@ -44,6 +44,98 @@ GAMES = [
 BASE = "https://www.illinoislottery.com/games/fpg/{slug}"
 HERE = Path(__file__).resolve().parent
 
+# ============================================================================
+#  EV ENGINE
+#  For each game we know the ticket price, the jackpot's odds (1 in N), and the
+#  full table of NON-jackpot prize tiers as (prize, odds 1-in) from the rules PDF.
+#
+#    fixed_EV          = sum(prize / odds) over the non-jackpot tiers
+#    break-even jackpot = (price - fixed_EV) * jackpot_odds   # EV == $0 here
+#    notify threshold   = break-even * (1 + NOTIFY_MARGIN)    # your cushion
+#    EV at jackpot J    = fixed_EV + J/jackpot_odds - price
+#
+#  A game flags BUY when the live scraped jackpot >= its notify threshold.
+#  (EV ignores taxes and the small chance of splitting a jackpot — see README.)
+# ============================================================================
+NOTIFY_MARGIN = 0.40  # 40% above break-even before we shout "BUY"
+
+GAME_DATA = {
+    # ---- filled from the rules PDFs (batch 1 of 3) -------------------------
+    "booming-bucks": {
+        "price": 2.00, "jackpot_odds": 120000.0,
+        "fixed_prizes": [
+            (2, 12), (3, 16), (4, 20), (5, 40), (6, 60), (8, 120), (10, 160),
+            (12, 320), (15, 400), (20, 480), (25, 585.37), (30, 960), (40, 2400),
+            (50, 3000), (60, 6000), (75, 8000), (80, 12000), (100, 16000),
+            (150, 24000), (500, 48000),
+        ],
+    },
+    "fiesta-fever": {
+        "price": 5.00, "jackpot_odds": 60000.0,
+        "fixed_prizes": [
+            (5, 6.25), (10, 19.20), (15, 22.86), (20, 54.24), (30, 100),
+            (50, 203.39), (100, 500), (500, 20000),
+        ],
+    },
+    "blackjack": {
+        "price": 5.00, "jackpot_odds": 60000.0,
+        "fixed_prizes": [
+            (5, 6.86), (10, 16), (15, 32), (25, 48), (50, 120), (100, 309.68),
+        ],
+    },
+    "going-pro": {
+        "price": 5.00, "jackpot_odds": 60000.0,
+        "fixed_prizes": [
+            (5, 7.50), (10, 12.97), (15, 15), (50, 150), (100, 480),
+            (200, 4800), (500, 24000), (570, 48000),
+        ],
+    },
+    "big-number-knockout": {
+        "price": 5.00, "jackpot_odds": 80000.0,
+        "fixed_prizes": [
+            (5, 6.91), (10, 17.78), (15, 24), (20, 40), (25, 117.07), (30, 228.57),
+            (40, 448.60), (50, 393.44), (60, 2000), (80, 3000), (100, 2400),
+            (200, 16000), (500, 20000), (1000, 60000),
+        ],
+    },
+    # ---- batches 2 & 3 (remaining 7 games) get added as their PDFs arrive --
+}
+
+
+def fixed_ev(g):
+    return sum(prize / odds for prize, odds in g["fixed_prizes"])
+
+
+def breakeven_jackpot(g):
+    return (g["price"] - fixed_ev(g)) * g["jackpot_odds"]
+
+
+def ev_at_jackpot(g, jackpot):
+    return fixed_ev(g) + jackpot / g["jackpot_odds"] - g["price"]
+
+
+def evaluate(slug, jackpot_value):
+    """Return EV facts for a game, or None if we don't have its odds yet."""
+    g = GAME_DATA.get(slug)
+    if not g:
+        return None
+    be = breakeven_jackpot(g)
+    thr = be * (1 + NOTIFY_MARGIN)
+    out = {"breakeven": be, "threshold": thr, "price": g["price"]}
+    if jackpot_value is None:
+        out["status"] = "no-jackpot"
+        return out
+    out["ev"] = ev_at_jackpot(g, jackpot_value)
+    out["edge_pct"] = 100.0 * out["ev"] / g["price"]
+    if jackpot_value >= thr:
+        out["status"] = "BUY"
+    elif jackpot_value >= be:
+        out["status"] = "POSITIVE"   # +EV but below your 40% cushion
+    else:
+        out["status"] = "WAIT"
+    return out
+
+
 
 # ---- Step 1: make sure the tools are installed (only does work first run) ----
 def ensure_setup():
@@ -165,10 +257,10 @@ def scrape():
 
             if value is not None:
                 print(f"  [{i}/{len(GAMES)}] {name:<28} {fmt(value)}")
-                results.append((name, fmt(value), value, source, ""))
+                results.append((name, slug, fmt(value), value, source, ""))
             else:
                 print(f"  [{i}/{len(GAMES)}] {name:<28} (could not read){' - ' + err if err else ''}")
-                results.append((name, "", "", "", err or "not found"))
+                results.append((name, slug, "", None, "", err or "not found"))
         ctx.close()
     return results
 
@@ -189,44 +281,115 @@ def html_jackpot(html):
     return best
 
 
-# ---- Step 3: write + open a nice results page -------------------------------
+# ---- Step 3: score EV, write + open a results page, and alert ---------------
+STATUS_STYLE = {
+    "BUY":      ("#0b8a0b", "#e3f6e8", "🔔 BUY"),
+    "POSITIVE": ("#b8860b", "#fdf4d6", "+EV"),
+    "WAIT":     ("#888",    "#f2f2f5", "wait"),
+    "no-jackpot": ("#c0392b", "#fdecea", "no jackpot read"),
+    "no-data":  ("#888",    "#f2f2f5", "need odds PDF"),
+}
+
+
 def report(results):
     when = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     rows = ""
-    csv_lines = ["Game,Jackpot,Value,Source"]
-    for name, disp, val, source, err in results:
+    buys = []
+    csv_lines = ["Game,Jackpot,JackpotValue,BreakEven,BuyThreshold(+40%),EV_per_ticket,Edge_%,Status,Source"]
+
+    for name, slug, disp, val, source, err in results:
+        ev = evaluate(slug, val)
+        # Decide status + the numbers to show.
+        if ev is None:
+            status = "no-data"
+            be_s = thr_s = ev_s = edge_s = "—"
+        else:
+            status = ev["status"] if disp else "no-jackpot"
+            be_s = fmt(ev["breakeven"])
+            thr_s = fmt(ev["threshold"])
+            ev_s = (f'{"+" if ev.get("ev",0)>=0 else ""}${ev["ev"]:,.2f}') if "ev" in ev else "—"
+            edge_s = (f'{ev["edge_pct"]:+.1f}%') if "edge_pct" in ev else "—"
+
+        color, bg, label = STATUS_STYLE.get(status, STATUS_STYLE["WAIT"])
         amount = disp if disp else f'<span style="color:#c0392b">{err or "—"}</span>'
-        rows += (f"<tr><td>{name}</td><td class=amt>{amount}</td>"
-                 f"<td class=src>{source}</td></tr>")
-        csv_lines.append(f'"{name}","{disp}","{val}","{source}"')
+        if status == "BUY":
+            buys.append((name, disp, thr_s, edge_s))
+        rowbg = "background:#eafbe8;" if status == "BUY" else ""
+        rows += (
+            f'<tr style="{rowbg}"><td>{name}</td>'
+            f'<td class=amt>{amount}</td>'
+            f'<td class=amt>{be_s}</td>'
+            f'<td class=amt>{thr_s}</td>'
+            f'<td class=amt>{ev_s}</td>'
+            f'<td class=amt>{edge_s}</td>'
+            f'<td><span class=pill style="color:{color};background:{bg}">{label}</span></td></tr>'
+        )
+        csv_lines.append(
+            f'"{name}","{disp}","{val if val is not None else ""}",'
+            f'"{be_s}","{thr_s}","{ev_s}","{edge_s}","{status}","{source}"'
+        )
+
     csv = "\\n".join(csv_lines).replace('"', '\\"')
+
+    if buys:
+        items = "".join(f"<li><b>{n}</b> — jackpot {d}, buy-threshold {t} (edge {e})</li>"
+                        for n, d, t, e in buys)
+        banner = (f'<div class="banner buy"><div class="big">🔔 {len(buys)} '
+                  f'+EV BUY SIGNAL{"S" if len(buys)!=1 else ""}</div><ul>{items}</ul></div>')
+    else:
+        banner = ('<div class="banner none">No games are 40% above break-even right now — '
+                  'nothing to buy.</div>')
 
     html = f"""<!doctype html><meta charset=utf-8>
 <title>Illinois FastPlay Jackpots</title>
 <style>
  body{{font-family:system-ui,Segoe UI,Roboto,sans-serif;background:#1b0738;color:#fff;margin:0;padding:24px}}
- h1{{font-size:1.4rem;margin:0 0 4px}} .sub{{opacity:.8;font-size:.9rem;margin-bottom:18px}}
- table{{width:100%;max-width:680px;border-collapse:collapse;background:#fff;color:#1a1a2e;border-radius:12px;overflow:hidden}}
- th,td{{padding:11px 14px;border-bottom:1px solid #eee;text-align:left}}
- th{{background:#f4f1fa;font-size:.72rem;text-transform:uppercase;color:#666}}
- td.amt{{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}}
- td.src{{font-size:.75rem;color:#888}}
+ h1{{font-size:1.4rem;margin:0 0 4px}} .sub{{opacity:.8;font-size:.85rem;margin-bottom:16px}}
+ .banner{{max-width:900px;border-radius:12px;padding:14px 18px;margin-bottom:18px}}
+ .banner.buy{{background:#0b8a0b;color:#fff}} .banner.none{{background:rgba(255,255,255,.1);color:#fff;opacity:.85}}
+ .banner .big{{font-size:1.2rem;font-weight:800;margin-bottom:6px}} .banner ul{{margin:6px 0 0 18px}}
+ table{{width:100%;max-width:900px;border-collapse:collapse;background:#fff;color:#1a1a2e;border-radius:12px;overflow:hidden}}
+ th,td{{padding:10px 12px;border-bottom:1px solid #eee;text-align:left;font-size:.9rem}}
+ th{{background:#f4f1fa;font-size:.68rem;text-transform:uppercase;color:#666}}
+ td.amt{{text-align:right;font-variant-numeric:tabular-nums}}
+ .pill{{font-size:.72rem;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}}
  button{{margin-top:16px;padding:10px 18px;border:0;border-radius:8px;background:#16a0e0;color:#fff;font-weight:600;cursor:pointer}}
 </style>
-<h1>🎰 Illinois Lottery FastPlay Jackpots</h1>
-<div class=sub>Scraped {when}. Re-run the file any time to refresh.</div>
-<table><thead><tr><th>Game</th><th style=text-align:right>Progressive Jackpot</th><th>Source</th></tr></thead>
-<tbody>{rows}</tbody></table>
+<h1>🎰 Illinois Lottery FastPlay — +EV Tracker</h1>
+<div class=sub>Scraped {when}. Break-even = jackpot where EV is $0. Buy-threshold = {int(NOTIFY_MARGIN*100)}% above that. Re-run any time to refresh.</div>
+{banner}
+<table><thead><tr>
+ <th>Game</th><th style=text-align:right>Jackpot</th><th style=text-align:right>Break-even</th>
+ <th style=text-align:right>Buy @ (+{int(NOTIFY_MARGIN*100)}%)</th><th style=text-align:right>EV / ticket</th>
+ <th style=text-align:right>Edge</th><th>Status</th>
+</tr></thead><tbody>{rows}</tbody></table>
 <button onclick="navigator.clipboard.writeText('{csv}');this.textContent='Copied!'">Copy as CSV</button>
 """
     out = HERE / "jackpots.html"
     out.write_text(html, encoding="utf-8")
     (HERE / "jackpots.csv").write_text("\n".join(csv_lines), encoding="utf-8")
     print(f"\nResults saved to {out}")
+
+    # ---- the actual "notify me" part ----
+    if buys:
+        print("\n" + "!" * 60)
+        print(f"  {len(buys)} +EV BUY SIGNAL(S):")
+        for n, d, t, e in buys:
+            print(f"   >> {n}: jackpot {d}  (buy at {t}, edge {e})")
+        print("!" * 60)
+        try:  # audible alert on Windows; silently skipped elsewhere
+            import winsound
+            for _ in range(len(buys)):
+                winsound.Beep(880, 220)
+        except Exception:
+            print("\a", end="")  # terminal bell fallback
+    else:
+        print("\nNo +EV buy signals right now.")
+
     webbrowser.open(out.as_uri())
 
 
-VERSION = "build-4 (DOM-only, no network listener)"
+VERSION = "build-5 (+EV engine, 5/12 games loaded)"
 
 
 def main():
@@ -237,7 +400,7 @@ def main():
         ensure_setup()
         results = scrape()
         report(results)
-        ok = sum(1 for r in results if r[1])
+        ok = sum(1 for r in results if r[2])
         print(f"\nDone — {ok}/{len(results)} jackpots read. A results page just opened in your browser.")
     except Exception as e:  # noqa: BLE001
         import traceback
