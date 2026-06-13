@@ -1,0 +1,19 @@
+{
+  "base_url": "https://www.illinoislottery.com",
+  "hub_path": "/games/fpg",
+  "game_path_template": "/games/fpg/{slug}",
+  "games": [
+    { "name": "Cash Castle",            "slug": "cash-castle",             "base": 100000 },
+    { "name": "Ultimate Diamond Jackpot","slug": "ultimate-diamond-jackpot","base": 75000 },
+    { "name": "Twenty 20s",             "slug": "twenty-20s",              "base": 50000 },
+    { "name": "Illinois Super Jackpot", "slug": "illinois-super-jackpot",  "base": null },
+    { "name": "Luxury Loot",            "slug": "luxury-loot",             "base": 20000 },
+    { "name": "Illinois Jackpot",       "slug": "illinois-jackpot",        "base": null },
+    { "name": "$10 Quick Spot",         "slug": "quick-spot-10",           "base": null },
+    { "name": "Big Number Knockout",    "slug": "big-number-knockout",     "base": 10000 },
+    { "name": "Going Pro",              "slug": "going-pro",               "base": null },
+    { "name": "Blackjack",              "slug": "blackjack",               "base": null },
+    { "name": "Fiesta Fever",           "slug": "fiesta-fever",            "base": 5000 },
+    { "name": "Booming Bucks",          "slug": "booming-bucks",           "base": 2000 }
+  ]
+}

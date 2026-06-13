@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Illinois Lottery FastPlay Jackpots</title>
+<style>
+  :root { --bg:#2d0a4e; --card:#fff; --accent:#16a0e0; --good:#1a8a3a; --bad:#c0392b; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+         background: linear-gradient(160deg,#3a0d63,#1b0738); color:#fff; min-height:100vh; }
+  header { padding: 28px 20px 8px; text-align:center; }
+  h1 { margin:0; font-size: 1.6rem; }
+  .sub { opacity:.8; font-size:.9rem; margin-top:6px; }
+  .bar { display:flex; gap:12px; align-items:center; justify-content:center; flex-wrap:wrap; padding:18px; }
+  button { font-size:1rem; font-weight:600; border:0; border-radius:10px; padding:12px 22px; cursor:pointer; }
+  #go { background:var(--accent); color:#fff; }
+  #go:disabled { opacity:.6; cursor:wait; }
+  .ghost { background:rgba(255,255,255,.12); color:#fff; text-decoration:none; }
+  label.toggle { font-size:.85rem; opacity:.85; display:flex; gap:6px; align-items:center; }
+  #status { text-align:center; min-height:22px; opacity:.9; font-size:.9rem; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 16px 40px; }
+  table { width:100%; border-collapse:collapse; background:var(--card); color:#1a1a2e;
+          border-radius:12px; overflow:hidden; box-shadow:0 8px 30px rgba(0,0,0,.3); }
+  th,td { padding:12px 14px; text-align:left; border-bottom:1px solid #eee; }
+  th { background:#f4f1fa; font-size:.78rem; text-transform:uppercase; letter-spacing:.04em; color:#555; }
+  td.amt { text-align:right; font-variant-numeric: tabular-nums; font-weight:700; font-size:1.05rem; }
+  tr:last-child td { border-bottom:0; }
+  .pill { font-size:.7rem; padding:2px 8px; border-radius:999px; }
+  .pill.ok { background:#e3f6e8; color:var(--good); }
+  .pill.err { background:#fdecea; color:var(--bad); }
+  .src { font-size:.72rem; opacity:.6; }
+  .spin { display:inline-block; width:14px; height:14px; border:2px solid rgba(255,255,255,.4);
+          border-top-color:#fff; border-radius:50%; animation:spin .8s linear infinite; vertical-align:-2px;}
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <header>
+    <h1>🎰 Illinois Lottery FastPlay Jackpots</h1>
+    <div class="sub">Click the button to pull the current progressive jackpot totals.</div>
+  </header>
+
+  <div class="bar">
+    <button id="go">Scrape Jackpots</button>
+    <a class="ghost" id="dljson" href="/download/json">Download JSON</a>
+    <a class="ghost" id="dlcsv" href="/download/csv">Download CSV</a>
+    <label class="toggle"><input type="checkbox" id="headed" /> Show browser</label>
+  </div>
+  <div id="status"></div>
+
+  <div class="wrap">
+    <table>
+      <thead>
+        <tr><th>Game</th><th style="text-align:right">Progressive Jackpot</th><th>Status</th></tr>
+      </thead>
+      <tbody id="rows">
+        {% for g in games %}
+        <tr data-slug="{{ g.slug }}">
+          <td>{{ g.name }}</td>
+          <td class="amt">—</td>
+          <td><span class="src">not scraped yet</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="sub" id="stamp" style="text-align:center; margin-top:12px;"></div>
+  </div>
+
+<script>
+const $ = sel => document.querySelector(sel);
+const rowsBySlug = {};
+document.querySelectorAll("#rows tr").forEach(tr => rowsBySlug[tr.dataset.slug] = tr);
+
+function render(games, scrapedAt) {
+  let ok = 0;
+  games.forEach(g => {
+    const tr = rowsBySlug[g.slug];
+    if (!tr) return;
+    const amt = tr.querySelector(".amt");
+    const status = tr.querySelector("td:last-child");
+    if (g.ok) {
+      ok++;
+      amt.textContent = g.jackpot;
+      status.innerHTML = `<span class="pill ok">ok</span> <span class="src">${g.source}</span>`;
+    } else {
+      amt.textContent = "—";
+      status.innerHTML = `<span class="pill err">failed</span> <span class="src">${(g.error||"").slice(0,60)}</span>`;
+    }
+  });
+  if (scrapedAt) $("#stamp").textContent = "Last updated: " + new Date(scrapedAt).toLocaleString();
+  return ok;
+}
+
+async function loadLatest() {
+  try {
+    const r = await fetch("/latest");
+    const data = await r.json();
+    if (data.games && data.games.length) render(data.games, data.scraped_at);
+  } catch (e) {}
+}
+
+$("#go").addEventListener("click", async () => {
+  const btn = $("#go");
+  btn.disabled = true;
+  $("#status").innerHTML = '<span class="spin"></span> Launching browser and scraping… this can take ~30–60s.';
+  try {
+    const r = await fetch("/scrape", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ headed: $("#headed").checked })
+    });
+    const data = await r.json();
+    if (!r.ok) { $("#status").textContent = "Error: " + (data.error || r.status); return; }
+    const ok = render(data.games);
+    $("#status").textContent = `Done — ${ok}/${data.games.length} jackpots scraped.`;
+  } catch (e) {
+    $("#status").textContent = "Error: " + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+loadLatest();
+</script>
+</body>
+</html>
