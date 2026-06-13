@@ -98,7 +98,43 @@ GAME_DATA = {
             (200, 16000), (500, 20000), (1000, 60000),
         ],
     },
-    # ---- batches 2 & 3 (remaining 7 games) get added as their PDFs arrive --
+    # ---- filled from the rules PDFs (batch 2 of 3) -------------------------
+    "quick-spot-10": {
+        "price": 10.00, "jackpot_odds": 60000.0,
+        "fixed_prizes": [
+            (10, 6), (50, 23), (100, 75), (250, 240), (500, 600),
+        ],
+    },
+    "illinois-jackpot": {
+        "price": 10.00, "jackpot_odds": 60000.0,
+        "fixed_prizes": [
+            (10, 6.86), (15, 10.91), (20, 13.33), (50, 40), (100, 240),
+            (500, 1500), (1000, 8000), (2500, 20000), (5000, 34285.71),
+        ],
+    },
+    "luxury-loot": {
+        "price": 10.00, "jackpot_odds": 80000.0,
+        "fixed_prizes": [
+            (10, 7.27), (20, 13.33), (50, 26.67), (75, 82.76), (100, 296.30),
+            (150, 4285.71), (200, 10909.09), (250, 15000), (300, 34285.71),
+            (500, 60000), (1000, 60000),
+        ],
+    },
+    "illinois-super-jackpot": {
+        "price": 20.00, "jackpot_odds": 120000.0,
+        "fixed_prizes": [
+            (20, 7.62), (30, 10.91), (40, 13.33), (100, 40), (200, 240),
+            (1000, 1500), (2000, 8000), (5000, 20000), (10000, 34285.71),
+        ],
+    },
+    "twenty-20s": {
+        "price": 20.00, "jackpot_odds": 80000.0,
+        "fixed_prizes": [
+            (20, 6.86), (30, 12), (50, 19.67), (100, 48), (500, 240),
+            (1000, 2400), (10000, 24000),
+        ],
+    },
+    # ---- batch 3 (remaining 2 games) gets added as those PDFs arrive -------
 }
 
 
@@ -389,7 +425,7 @@ def report(results):
     webbrowser.open(out.as_uri())
 
 
-VERSION = "build-5 (+EV engine, 5/12 games loaded)"
+VERSION = "build-6 (+EV engine, 10/12 games loaded)"
 
 
 def main():
