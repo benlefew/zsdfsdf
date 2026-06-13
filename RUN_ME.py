@@ -139,13 +139,8 @@ def scrape():
         )
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
 
-        # Register the network listener ONCE; reuse a list we clear per game.
-        captured = []
-        page.on("response", lambda r: _grab(r, captured))
-
         for i, (name, slug) in enumerate(GAMES, 1):
             url = BASE.format(slug=slug)
-            captured.clear()
             value, source, err = None, "", None
             try:
                 page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -153,11 +148,14 @@ def scrape():
                     page.wait_for_load_state("networkidle", timeout=15000)
                 except PWTimeout:
                     pass
-                page.wait_for_timeout(2000)
-                for blob in list(captured):
-                    v = json_jackpot(blob)
-                    if v is not None and (value is None or v > value):
-                        value, source = v, "site data"
+                page.wait_for_timeout(2500)  # let the jackpot render
+
+                # 1) Authoritative: a jackpot figure embedded in the page's HTML
+                #    (the SPA stashes its data as JSON inside the page source).
+                value = html_jackpot(page.content())
+                if value is not None:
+                    source = "site data"
+                # 2) Fallback: the dollar amount visible in the rendered text.
                 if value is None:
                     value = text_jackpot(page.inner_text("body"))
                     if value is not None:
@@ -175,12 +173,20 @@ def scrape():
     return results
 
 
-def _grab(resp, bucket):
-    try:
-        if "json" in (resp.headers or {}).get("content-type", "").lower():
-            bucket.append(resp.json())
-    except Exception:
-        pass
+# Find a jackpot figure inside raw page HTML, e.g.  "jackpot":786049  or
+# "progressiveJackpotAmount":"$786,049". Takes the largest such match.
+HTML_JACKPOT = re.compile(
+    r"(?:jackpot|progressive|top.?prize)[A-Za-z]*\"?\s*[:=]\s*\"?\$?\s*([\d,]+(?:\.\d+)?)",
+    re.IGNORECASE)
+
+
+def html_jackpot(html):
+    best = None
+    for raw in HTML_JACKPOT.findall(html):
+        v = num(raw)
+        if v is not None and v >= 100 and (best is None or v > best):
+            best = v
+    return best
 
 
 # ---- Step 3: write + open a nice results page -------------------------------
@@ -220,7 +226,13 @@ def report(results):
     webbrowser.open(out.as_uri())
 
 
+VERSION = "build-4 (DOM-only, no network listener)"
+
+
 def main():
+    print("=" * 60)
+    print("  Illinois FastPlay Jackpots  —  " + VERSION)
+    print("=" * 60)
     try:
         ensure_setup()
         results = scrape()
